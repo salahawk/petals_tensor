@@ -29,6 +29,7 @@ from petals_tensor.server.backend import TransformerBackend, merge_inference_poo
 from petals_tensor.server.block_utils import get_block_size, resolve_block_dtype
 from petals_tensor.server.from_pretrained import load_pretrained_block
 from petals_tensor.server.handler import TransformerConnectionHandler
+from petals_tensor.server.inference_validator import InferenceValidator
 from petals_tensor.server.memory_cache import MemoryCache
 from petals_tensor.server.reachability import ReachabilityProtocol, check_direct_reachability, validate_reachability
 from petals_tensor.server.throughput import get_dtype_name, get_server_throughput
@@ -272,6 +273,59 @@ class Server:
         self.module_container = None
         self.stop = threading.Event()
 
+    # def _choose_num_blocks(self) -> int:
+    #     assert self.device.type in ("cuda", "mps"), (
+    #         "GPU is not available. If you want to run a CPU-only server, please specify --num_blocks. "
+    #         "CPU-only servers in the public swarm are discouraged since they are much slower"
+    #     )
+    #     num_devices = len(self.tensor_parallel_devices) if self.tensor_parallel_devices else 1
+
+    #     if num_devices > 1:
+    #         assert self.device.type == "cuda", f"Tensor parallelism is not supported on {self.device.type.upper()}"
+    #         memory_per_device = tuple(
+    #             torch.cuda.get_device_properties(device).total_memory for device in self.tensor_parallel_devices
+    #         )
+    #         total_memory = min(memory_per_device) * num_devices
+    #         if max(memory_per_device) / min(memory_per_device) > 1.5:
+    #             raise ValueError(
+    #                 "GPU devices have highly uneven memory, which makes tensor parallelism inefficient. "
+    #                 "Please launch individual servers on each GPU or set --num_blocks manually to "
+    #                 "override this exception."
+    #             )
+    #     elif self.device.type == "cuda":
+    #         total_memory = torch.cuda.get_device_properties(self.device).total_memory
+    #     else:
+    #         total_memory = psutil.virtual_memory().total
+
+    #     gib = 1024**3
+    #     # Estimate of GPU memory used in rpc_backward (2 GiB for BLOOM, proportional for other models)
+    #     autograd_memory = 2 * gib * num_devices / 14336 * self.block_config.hidden_size
+
+    #     block_size = get_block_size(self.block_config, "memory", dtype=self.torch_dtype, quant_type=self.quant_type)
+    #     total_memory_per_block = block_size + self._cache_bytes_per_block
+    #     if self.adapters:
+    #         # Delay import of petals.utils.peft to avoid unnecessary import of bitsandbytes
+    #         from petals_tensor.utils.peft import estimate_adapter_memory_per_block
+
+    #         total_memory_per_block += estimate_adapter_memory_per_block(
+    #             self.block_config,
+    #             self.torch_dtype,
+    #             self.adapters,
+    #             token=self.token,
+    #             cache_dir=self.cache_dir,
+    #             max_disk_space=self.max_disk_space,
+    #         )
+
+    #     num_blocks = math.floor((total_memory - autograd_memory) / total_memory_per_block)
+    #     assert num_blocks >= 1, "Your GPU does not have enough memory to serve at least one block"
+
+    #     num_blocks = min(num_blocks, self.block_config.num_hidden_layers)
+    #     logger.info(
+    #         f"Server will fill your GPU memory with {num_blocks} transformer blocks. "
+    #         f"If you want to leave some free GPU memory, please specify a lesser --num_blocks manually"
+    #     )
+    #     return num_blocks
+
     def _choose_num_blocks(self) -> int:
         assert self.device.type in ("cuda", "mps"), (
             "GPU is not available. If you want to run a CPU-only server, please specify --num_blocks. "
@@ -324,6 +378,35 @@ class Server:
             f"If you want to leave some free GPU memory, please specify a lesser --num_blocks manually"
         )
         return num_blocks
+    
+    # Example usage of the InferenceValidator class
+    def run_validation(self):
+        model_name = "model_name"
+        node_url = "http://localhost:9933"
+        peers = ["peer_1", "peer_2", "peer_3"]
+        
+        validator = InferenceValidator(model_name, peers, node_url)
+        
+        while True:
+            selected_peers = validator.select_peers()
+            
+            for peer in selected_peers:
+                peer_blocks = self.get_peer_blocks(peer)  # Function to get peer's blocks
+                validator.update_blocks(peer_blocks)
+                validator.set_deterministic()
+                
+                input_data = "Your input data here"
+                expected_output = "Expected output here"
+                
+                if validator.validate_inference(input_data, expected_output):
+                    print(f"Peer {peer} inference is correct.")
+                else:
+                    validator.propose_dishonesty(peer)
+            
+            validator.recalibrate_blocks()
+            
+            # Wait for the next validation checkpoint
+            time.sleep(60)  # Example: wait for 60 seconds before the next validation checkpoint
 
     def run(self):
         while True:
