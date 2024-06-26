@@ -6,68 +6,68 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from utils import is_in_consensus_steps, get_eligible_consensus_block
 
 
-def submit_consensus_data(
-  substrate: SubstrateInterface,
-  keypair: Keypair,
-  model_id: int,
-  consensus_data
-):
-  """
-  Submit consensus data on each epoch with no conditionals
+# def submit_consensus_data(
+#   substrate: SubstrateInterface,
+#   keypair: Keypair,
+#   model_id: int,
+#   consensus_data
+# ):
+#   """
+#   Submit consensus data on each epoch with no conditionals
 
-  It is up to prior functions to decide whether to call this function
+#   It is up to prior functions to decide whether to call this function
 
-  :param substrate: interface to blockchain
-  :param keypair: keypair of extrinsic caller. Must be a peer in the model
-  :param model_id: the id of the model associated with the model path
-  :param consensus_data: an array of data containing all AccountIds, PeerIds, and scores per model hoster
+#   :param substrate: interface to blockchain
+#   :param keypair: keypair of extrinsic caller. Must be a peer in the model
+#   :param model_id: the id of the model associated with the model path
+#   :param consensus_data: an array of data containing all AccountIds, PeerIds, and scores per model hoster
 
-  Note: It's important before calling this to ensure the entrinsic will be successful.
-        If the function reverts, the extrinsic is Pays::Yes
-  """
+#   Note: It's important before calling this to ensure the entrinsic will be successful.
+#         If the function reverts, the extrinsic is Pays::Yes
+#   """
 
-  # compose call
-  call = substrate.compose_call(
-    call_module='Network',
-    call_function='submit_consensus_data',
-    call_params={
-      'model_id': model_id,
-      'consensus_data': consensus_data
-    }
-  )
+#   # compose call
+#   call = substrate.compose_call(
+#     call_module='Network',
+#     call_function='submit_consensus_data',
+#     call_params={
+#       'model_id': model_id,
+#       'consensus_data': consensus_data
+#     }
+#   )
 
-  # create signed extrinsic
-  extrinsic = substrate.create_signed_extrinsic(call=call, keypair=keypair)
+#   # create signed extrinsic
+#   extrinsic = substrate.create_signed_extrinsic(call=call, keypair=keypair)
 
-  # submit extrinsic (this is gasless unless it reverts)
-  # This will retry up to 4 times when except is returned
-  # 
-  @retry(wait=wait_exponential(multiplier=1, min=4, max=10), stop=stop_after_attempt(4))
-  def submit_extrinsic():
-    try:
-      receipt = substrate.submit_extrinsic(extrinsic, wait_for_inclusion=True)
-      if receipt.is_success:
-        print('✅ Success, triggered events:')
-        for event in receipt.triggered_events:
-          print(f'* {event.value}')
-      else:
-        print('⚠️ Extrinsic Failed: ', receipt.error_message)
-      return receipt
-    except SubstrateRequestException as e:
-      print("Failed to send: {}".format(e))
+#   # submit extrinsic (this is gasless unless it reverts)
+#   # This will retry up to 4 times when except is returned
+#   # 
+#   @retry(wait=wait_exponential(multiplier=1, min=4, max=10), stop=stop_after_attempt(4))
+#   def submit_extrinsic():
+#     try:
+#       receipt = substrate.submit_extrinsic(extrinsic, wait_for_inclusion=True)
+#       if receipt.is_success:
+#         print('✅ Success, triggered events:')
+#         for event in receipt.triggered_events:
+#           print(f'* {event.value}')
+#       else:
+#         print('⚠️ Extrinsic Failed: ', receipt.error_message)
+#       return receipt
+#     except SubstrateRequestException as e:
+#       print("Failed to send: {}".format(e))
 
-  return submit_extrinsic()
+#   return submit_extrinsic()
 
-  # try:
-  #   receipt = substrate.submit_extrinsic(extrinsic, wait_for_inclusion=True)
-  #   if receipt.is_success:
-  #     print('✅ Success, triggered events:')
-  #     for event in receipt.triggered_events:
-  #       print(f'* {event.value}')
-  #   else:
-  #     print('⚠️ Extrinsic Failed: ', receipt.error_message)
-  # except SubstrateRequestException as e:
-  #   print("Failed to send: {}".format(e))
+#   # try:
+#   #   receipt = substrate.submit_extrinsic(extrinsic, wait_for_inclusion=True)
+#   #   if receipt.is_success:
+#   #     print('✅ Success, triggered events:')
+#   #     for event in receipt.triggered_events:
+#   #       print(f'* {event.value}')
+#   #   else:
+#   #     print('⚠️ Extrinsic Failed: ', receipt.error_message)
+#   # except SubstrateRequestException as e:
+#   #   print("Failed to send: {}".format(e))
 
 def eligible_to_submit_consensus_data(
   substrate: SubstrateInterface,
